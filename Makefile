@@ -13,4 +13,4 @@ module:
 	mkdir -p node_modules/enet/lib
 	cp package.json node_modules/enet
 	cp enet.js node_modules/enet/lib
-	cp build/default/enetnat.node node_modules/enet/lib
+	cp build/Release/enetnat.node node_modules/enet/lib

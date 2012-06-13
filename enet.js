@@ -63,6 +63,12 @@ function Host()
                 case enetnat.Event.TYPE_RECEIVE:
                     self.emit('message', event.peer(), event.packet(), event.channelID(), event.data());
                     break;
+                case enetnat.Event.TYPE_TELEX:
+                    self.emit('telex', event.packet().data(), 
+                                       {address: event.peer().address().address(),
+                                        port: +event.peer().address().port()});
+                    event.peer().delete();
+                    break;
                 }
 
                 event = self.host.service(0);
@@ -86,7 +92,7 @@ Host.prototype.start_watcher = function()
     {
         this.watcher.set(this.host.fd(), true, false);
         this.watcher.start();
-        this.intervalId = timers.setInterval(this.runloop, 100);
+        this.intervalId = timers.setInterval(this.runloop, 30);
         this.watcher_running = true;
     }
 }
@@ -168,5 +174,8 @@ Host.prototype.service = function(timeout)
 {
     return this.host.service(timeout);
 }
-
+Host.prototype.send =function()
+{
+    return this.host.send.apply(this.host,arguments);
+}
 module.exports.Host = Host;

@@ -4,9 +4,22 @@
 #include <v8.h>
 #include <node.h>
 #include <node_buffer.h>
-#include <node_events.h>
+#include <enet/utility.h>
+#include <enet/time.h>
 #include <enet/enet.h>
 #include <cstring>
+
+//modified enet lib to export below functions..
+extern "C" {
+    int exported_enet_protocol_dispatch_incoming_commands (ENetHost * host, ENetEvent * event);
+    int exported_enet_protocol_handle_incoming_commands (ENetHost * host, ENetEvent * event);
+    int exported_enet_protocol_send_outgoing_commands (ENetHost * host, ENetEvent * event, int checkForTimeouts);
+}
+
+enum _XtraENetEventType
+{
+   ENET_EVENT_TYPE_TELEX      = 100        
+};
 
 #ifdef DEBUG
 #define debug(fmt, args...) fprintf(stderr, fmt, ##args)
@@ -72,6 +85,7 @@ public:
         s_ct->InstanceTemplate()->SetInternalFieldCount(1);
         s_ct->SetClassName(v8::String::NewSymbol("Packet"));
         NODE_SET_PROTOTYPE_METHOD(s_ct, "data", Data);
+        NODE_SET_PROTOTYPE_METHOD(s_ct, "dataLength", DataLength);
         NODE_SET_PROTOTYPE_METHOD(s_ct, "setData", SetData);
         NODE_SET_PROTOTYPE_METHOD(s_ct, "flags", Flags);
         NODE_SET_PROTOTYPE_METHOD(s_ct, "setFlags", SetFlags);
@@ -146,7 +160,16 @@ public:
         v8::Local<v8::Object> actualBuffer = bufferConstructor->NewInstance(3, constructorArgs);
         return scope.Close(actualBuffer);
     }
-    
+    static v8::Handle<v8::Value> DataLength(const v8::Arguments& args)
+    {
+        v8::HandleScope scope;
+        Packet *packet = node::ObjectWrap::Unwrap<Packet>(args.This());
+        if (packet->isSent)
+        {
+            return v8::ThrowException(v8::Exception::Error(v8::String::New("packet has been sent and is now invalid")));
+        }
+        return scope.Close(v8::Uint32::New(packet->packet->dataLength));
+    }
     static v8::Handle<v8::Value> Flags(const v8::Arguments& args)
     {
         v8::HandleScope scope;
@@ -282,39 +305,37 @@ public:
         MY_NODE_DEFINE_CONSTANT(s_ct, "PORT_ANY", ENET_PORT_ANY);
         target->Set(v8::String::NewSymbol("Address"), s_ct->GetFunction());
     }
-    
-    static v8::Handle<v8::Value> New(const v8::Arguments& args)
-    {
-        v8::HandleScope scope;
-        Address *addr = NULL;
-        if (args.Length() == 1)
+    static void MakeAddress(const v8::Arguments& args, Address** addr, unsigned int argsLength )
+    {   
+     
+        if (argsLength == 1)
         {
             if (args[0]->IsString())
             {
                 v8::String::AsciiValue val(args[0]);
-                addr = new Address(*val);
+                *addr = new Address(*val);
             }
             else if (args[0]->IsUint32())
             {
-                addr = new Address(args[0]->Uint32Value(), ENET_PORT_ANY);
+                *addr = new Address(args[0]->Uint32Value(), ENET_PORT_ANY);
             }
             else if (args[0]->IsInt32())
             {
-                addr = new Address((uint32_t) args[0]->Int32Value(), ENET_PORT_ANY);
+                *addr = new Address((uint32_t) args[0]->Int32Value(), ENET_PORT_ANY);
             }
         }
-        else if (args.Length() == 2)
+        else if (argsLength == 2)
         {
             if (args[0]->IsString())
             {
                 v8::String::AsciiValue val(args[0]);
                 if (args[1]->IsUint32())
                 {
-                    addr = new Address(*val, (enet_uint16) args[1]->Uint32Value());
+                    *addr = new Address(*val, (enet_uint16) args[1]->Uint32Value());
                 }
                 else if (args[1]->IsInt32())
                 {
-                    addr = new Address(*val, (enet_uint16) args[1]->Int32Value());
+                    *addr = new Address(*val, (enet_uint16) args[1]->Int32Value());
                 }
             }
             else if (args[0]->IsUint32())
@@ -322,18 +343,26 @@ public:
                 uint32_t val = args[0]->Uint32Value();
                 if (args[1]->IsUint32())
                 {
-                    addr = new Address(val, (enet_uint16) args[1]->Uint32Value());
+                    *addr = new Address(val, (enet_uint16) args[1]->Uint32Value());
                 }
                 else if (args[1]->IsInt32())
                 {
-                    addr = new Address(val, (enet_uint16) args[1]->Int32Value());
+                    *addr = new Address(val, (enet_uint16) args[1]->Int32Value());
                 }                
             }
         }
         else
         {
-            addr = new Address();
+            *addr = new Address();
         }
+    }
+    static v8::Handle<v8::Value> New(const v8::Arguments& args)
+    {
+        v8::HandleScope scope;
+        Address *addr = NULL;
+
+        MakeAddress(args,&addr, args.Length());
+
         if (addr != NULL)
         {
             addr->Wrap(args.This());
@@ -456,6 +485,7 @@ public:
         NODE_SET_PROTOTYPE_METHOD(s_ct, "disconnect", Disconnect);
         NODE_SET_PROTOTYPE_METHOD(s_ct, "disconnectLater", DisconnectLater);
         NODE_SET_PROTOTYPE_METHOD(s_ct, "address", GetAddress);
+        NODE_SET_PROTOTYPE_METHOD(s_ct, "delete", Delete);
         target->Set(v8::String::NewSymbol("Peer"), s_ct->GetFunction());
     }
     
@@ -563,6 +593,13 @@ public:
         Peer *peer = node::ObjectWrap::Unwrap<Peer>(args.This());
         return scope.Close(Address::WrapAddress(peer->peer->address));
     }
+    static v8::Handle<v8::Value> Delete(const v8::Arguments& args)
+    {
+        v8::HandleScope scope;
+        Peer *peer = node::ObjectWrap::Unwrap<Peer>(args.This());
+        delete peer->peer;
+        return scope.Close(v8::Null());
+    }
 };
 
 class Event : node::ObjectWrap
@@ -593,6 +630,7 @@ public:
         MY_NODE_DEFINE_CONSTANT(s_ct, "TYPE_CONNECT", ENET_EVENT_TYPE_CONNECT);
         MY_NODE_DEFINE_CONSTANT(s_ct, "TYPE_DISCONNECT", ENET_EVENT_TYPE_DISCONNECT);
         MY_NODE_DEFINE_CONSTANT(s_ct, "TYPE_RECEIVE", ENET_EVENT_TYPE_RECEIVE);
+        MY_NODE_DEFINE_CONSTANT(s_ct, "TYPE_TELEX", ENET_EVENT_TYPE_TELEX);
         target->Set(v8::String::NewSymbol("Event"), s_ct->GetFunction());
     }
     
@@ -646,8 +684,10 @@ public:
     }
 };
 
-class Host : node::EventEmitter
+//class Host : node::EventEmitter
+class Host : node::ObjectWrap
 {
+
 private:
     ENetHost *host;
     Address *address;
@@ -705,6 +745,7 @@ public:
         NODE_SET_PROTOTYPE_METHOD(s_ct, "checkEvents", CheckEvents);
         NODE_SET_PROTOTYPE_METHOD(s_ct, "service", Service);
         NODE_SET_PROTOTYPE_METHOD(s_ct, "fd", FD);
+        NODE_SET_PROTOTYPE_METHOD(s_ct, "send", SocketSend);//send raw node::Buffer on socket
         target->Set(v8::String::NewSymbol("Host"), s_ct->GetFunction());
     }
     
@@ -727,7 +768,7 @@ public:
         try
         {
             Host *host = new Host(addr, peerCount, channelCount, incomingBW, outgoingBW);
-            host->Wrap(args.This());
+            host->Wrap(args.This());            
             return scope.Close(args.This());
         }
         catch (...)
@@ -856,7 +897,7 @@ public:
         if (args.Length() > 0)
             timeout = args[0]->Uint32Value();
         ENetEvent event;
-        int ret = enet_host_service(host->host, &event, timeout);
+        int ret = Host::override_enet_host_service(host->host, &event, timeout);
         if (ret < 0)
             return v8::ThrowException(v8::String::New("error servicing host"));
         if (ret < 1)
@@ -871,6 +912,204 @@ public:
         Host *host = node::ObjectWrap::Unwrap<Host>(args.This());
         return scope.Close(v8::Int32::New(host->host->socket));
     }
+    static v8::Handle<v8::Value> SocketSend(const v8::Arguments& args){ 
+        v8::HandleScope scope;        
+        Host *host = node::ObjectWrap::Unwrap<Host>(args.This());        
+        ENetBuffer* buffer = new ENetBuffer(); 
+        int ret = -1;      
+        Address *addr = NULL;        
+        int adrargs = 1;
+        if(args[1]->IsInt32() || args[1]->IsUint32()) adrargs=2;
+        buffer->data = node::Buffer::Data(args[adrargs]->ToObject());     
+        buffer->dataLength = (size_t)node::Buffer::Length(args[adrargs]->ToObject());                 
+
+        Address::MakeAddress(args,&addr, adrargs);
+
+        if(addr != NULL){             
+            ret = enet_socket_send(host->host->socket,&addr->address,buffer,1); 
+        }
+
+        delete buffer;
+        delete addr;        
+        return scope.Close(v8::Int32::New(ret));
+    }
+    static int handle_telehash_telex(ENetHost *host, ENetEvent *event){
+        //puts("handle_telehash_telex");
+        //puts((const char*)host->receivedData);
+        //quick and dirty test for JSON packet..start with "{" end with  "}" or "\n"        
+        if(host->receivedDataLength >= 2 && host->receivedData[0]=='{' && 
+           (host->receivedData[host->receivedDataLength-1]=='}' || host->receivedData[host->receivedDataLength-1]=='\n') ){
+           
+            if (event != NULL)
+            {
+                //puts("incoming telex");
+                //TODO maintain an ENetList of peers.. 
+                event->peer=new ENetPeer();
+                event->peer->address.host = host->receivedAddress.host;
+                event->peer->address.port = host->receivedAddress.port;
+                event->type = (ENetEventType) ENET_EVENT_TYPE_TELEX;
+                event->data = 0;
+                event->packet = enet_packet_create(host->receivedData, host->receivedDataLength, 0);
+                //puts("handle_telehash_telex");
+                return 1;
+            }
+        }
+        return -1;
+    }
+    
+    static int override_enet_protocol_receive_incoming_commands (ENetHost * host, ENetEvent * event)
+    {
+        for (;;)
+        {
+           int receivedLength;
+           ENetBuffer buffer;
+
+           buffer.data = host -> packetData [0];
+           buffer.dataLength = sizeof (host -> packetData [0]);
+
+           receivedLength = enet_socket_receive (host -> socket,
+                                                 & host -> receivedAddress,
+                                                 & buffer,
+                                                 1);
+
+           if (receivedLength < 0)
+             return -1;
+
+           if (receivedLength == 0)
+             return 0;
+
+           host -> receivedData = host -> packetData [0];
+           host -> receivedDataLength = receivedLength;
+           host -> totalReceivedData += receivedLength;
+           host -> totalReceivedPackets ++;
+           
+           //intercept JSON telexes (out of band of ENET protocol)
+           if( handle_telehash_telex(host,event) == 1 ) return 1;
+           
+           switch (exported_enet_protocol_handle_incoming_commands (host, event))
+           {
+           case 1:
+              return 1;
+           
+           case -1:
+              return -1;
+
+           default:
+              break;
+           }
+        }
+
+        return -1;
+    }
+    static int override_enet_host_service (ENetHost * host, ENetEvent * event, enet_uint32 timeout)
+    {
+        enet_uint32 waitCondition;
+
+        if (event != NULL)
+        {
+            event -> type = ENET_EVENT_TYPE_NONE;
+            event -> peer = NULL;
+            event -> packet = NULL;
+
+            switch (exported_enet_protocol_dispatch_incoming_commands (host, event))
+            {
+            case 1:
+                return 1;
+
+            case -1:
+                perror ("Error dispatching incoming packets");
+
+                return -1;
+
+            default:
+                break;
+            }
+        }
+
+        host -> serviceTime = enet_time_get ();
+        
+        timeout += host -> serviceTime;
+
+        do
+        {
+           if (ENET_TIME_DIFFERENCE (host -> serviceTime, host -> bandwidthThrottleEpoch) >= ENET_HOST_BANDWIDTH_THROTTLE_INTERVAL)
+             enet_host_bandwidth_throttle (host);
+
+           switch (exported_enet_protocol_send_outgoing_commands (host, event, 1))
+           {
+           case 1:
+              return 1;
+
+           case -1:
+              perror ("Error sending outgoing packets");
+
+              return -1;
+
+           default:
+              break;
+           }
+
+           switch (override_enet_protocol_receive_incoming_commands (host, event))
+           {
+           case 1:
+              return 1;
+
+           case -1:
+              perror ("Error receiving incoming packets");
+
+              return -1;
+
+           default:
+              break;
+           }
+
+           switch (exported_enet_protocol_send_outgoing_commands (host, event, 1))
+           {
+           case 1:
+              return 1;
+
+           case -1:
+              perror ("Error sending outgoing packets");
+
+              return -1;
+
+           default:
+              break;
+           }
+
+           if (event != NULL)
+           {
+              switch (exported_enet_protocol_dispatch_incoming_commands (host, event))
+              {
+              case 1:
+                 return 1;
+
+              case -1:
+                 perror ("Error dispatching incoming packets");
+
+                 return -1;
+
+              default:
+                 break;
+              }
+           }
+
+           host -> serviceTime = enet_time_get ();
+
+           if (ENET_TIME_GREATER_EQUAL (host -> serviceTime, timeout))
+             return 0;
+
+           waitCondition = ENET_SOCKET_WAIT_RECEIVE;
+
+           if (enet_socket_wait (host -> socket, & waitCondition, ENET_TIME_DIFFERENCE (timeout, host -> serviceTime)) != 0)
+             return -1;
+           
+           host -> serviceTime = enet_time_get ();
+        } while (waitCondition == ENET_SOCKET_WAIT_RECEIVE);
+
+        return 0; 
+    }
+
 };
 
 }
