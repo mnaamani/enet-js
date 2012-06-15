@@ -103,13 +103,13 @@ public:
         enet_uint32 flags = 0;
         if (args.Length() > 1)
         {
-            if (args[0]->IsInt32())
+            if (args[1]->IsInt32())
             {
-                flags = (enet_uint32) args[0]->Int32Value();
+                flags = (enet_uint32) args[1]->Int32Value();
             }
-            else if (args[0]->IsUint32())
+            else if (args[1]->IsUint32())
             {
-                flags = args[0]->Uint32Value();
+                flags = args[1]->Uint32Value();
             }
         }
         if (args.Length() > 0)
