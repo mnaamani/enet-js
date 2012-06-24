@@ -45,9 +45,11 @@ function Host()
         try
         {
             var event = self.host.service(0);
+            var ev_type;
             while (event != null)
             {
-                switch (event.type())
+                ev_type = event.type || event.type();
+                switch (ev_type)
                 {
                 case enetnat.Event.TYPE_NONE:
                     break;
@@ -64,10 +66,11 @@ function Host()
                     self.emit('message', event.peer(), event.packet(), event.channelID(), event.data());
                     break;
                 case enetnat.Event.TYPE_TELEX:
-                    self.emit('telex', event.packet().data(), 
-                                       {address: event.peer().address().address(),
-                                        port: +event.peer().address().port()});
-                    event.peer().delete();
+                    self.emit('telex', event.packet.data(),{
+                                            address: event.address.address(),
+                                            port: event.address.port()
+                                        });
+                    
                     break;
                 }
 

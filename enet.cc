@@ -68,9 +68,11 @@ public:
     
     ~Packet()
     {
+        //puts("Packet Destructor()");
         debug(stderr, "%p ~Packet() -- %p\n", this, packet);
         if (packet && !isSent)
         {
+            //puts("Destroying Packet.!");
             enet_packet_destroy(packet);
         }
     }
@@ -466,7 +468,9 @@ private:
 public:
     Peer(ENetPeer *peer) : peer(peer) { }
     
-    ~Peer() { }
+    ~Peer() {
+        //puts("Peer Destructor()");
+     }
     
     static v8::Persistent<v8::FunctionTemplate> s_ct;
     
@@ -581,10 +585,9 @@ public:
         v8::HandleScope scope;
         Peer *peer = node::ObjectWrap::Unwrap<Peer>(args.This());
         enet_uint32 data = 0;
-        if (args.Length() > 0)
-            data = args[0]->Uint32Value();
+        if (args.Length() > 0) data = args[0]->Uint32Value();
         enet_peer_disconnect_later(peer->peer, data);
-        return scope.Close(v8::Undefined());        
+        return scope.Close(v8::Undefined());
     }
     
     static v8::Handle<v8::Value> GetAddress(const v8::Arguments& args)
@@ -611,7 +614,11 @@ public:
     Event(ENetEvent event) : event(event)
     {
     }
-    
+    ~Event()
+    {
+        //puts("Event Destructor()");
+        //enet_packet_destroy(event.packet);
+    }
     static v8::Persistent<v8::FunctionTemplate> s_ct;
     
     static void Init(v8::Handle<v8::Object> target)
@@ -902,8 +909,19 @@ public:
             return v8::ThrowException(v8::String::New("error servicing host"));
         if (ret < 1)
             return v8::Null();
-        v8::Handle<v8::Value> result = Event::WrapEvent(event);
-        return scope.Close(result);        
+       
+        if(event.type == (ENetEventType) ENET_EVENT_TYPE_TELEX){
+            v8::Local<v8::Object> eobj = v8::Object::New();
+            ENetAddress address;
+            address.host = host->host->receivedAddress.host;
+            address.port = host->host->receivedAddress.port;            
+            eobj->Set(v8::String::NewSymbol("type"),v8::Integer::New(ENET_EVENT_TYPE_TELEX));
+            eobj->Set(v8::String::NewSymbol("address"), Address::WrapAddress(address));
+            eobj->Set(v8::String::NewSymbol("packet"), Packet::WrapPacket(event.packet));
+            return scope.Close(eobj);                            
+        }else{
+            return scope.Close(Event::WrapEvent(event));
+        }        
     }
     
     static v8::Handle<v8::Value> FD(const v8::Arguments& args)
@@ -941,15 +959,10 @@ public:
            (host->receivedData[host->receivedDataLength-1]=='}' || host->receivedData[host->receivedDataLength-1]=='\n') ){
            
             if (event != NULL)
-            {
-                //puts("incoming telex");
-                //TODO maintain an ENetList of peers.. 
-                event->peer=new ENetPeer();
-                event->peer->address.host = host->receivedAddress.host;
-                event->peer->address.port = host->receivedAddress.port;
+            {                
                 event->type = (ENetEventType) ENET_EVENT_TYPE_TELEX;
                 event->data = 0;
-                event->packet = enet_packet_create(host->receivedData, host->receivedDataLength, 0);
+                event->packet = enet_packet_create(host->receivedData, host->receivedDataLength, ENET_PACKET_FLAG_NO_ALLOCATE);
                 //puts("handle_telehash_telex");
                 return 1;
             }
