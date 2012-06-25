@@ -820,6 +820,15 @@ public:
     {
         v8::HandleScope scope;
         Host *host = node::ObjectWrap::Unwrap<Host>(args.This());
+        if(host->address->address.port == 0){
+            //puts("Getting Port");
+            struct sockaddr_in sin;
+            memset(&sin, 0, sizeof(sin));                      
+            socklen_t size;
+            if(getsockname (host->host->socket, (struct sockaddr *) &sin, &size) == 0) {
+                host->address->address.port = ntohs(sin.sin_port);
+            }
+        }
         v8::Handle<v8::Value> result = Address::WrapAddress(host->address->address);
         return scope.Close(result);
     }
