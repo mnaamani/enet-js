@@ -48,7 +48,12 @@ function Host()
             var ev_type;
             while (event != null)
             {
-                ev_type = event.type || event.type();
+                try{
+                    ev_type = event.type();
+                }catch(e){
+                    ev_type=event.type;
+                }
+                
                 switch (ev_type)
                 {
                 case enetnat.Event.TYPE_NONE:
