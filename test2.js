@@ -25,13 +25,15 @@ host.on("telex",function(msg,rinfo){
 
 
 host.start_watcher();
-/*
+
 peer = host.connect( new enet.Address("127.0.0.1",5000), 5);
 
 setInterval(function(){
 	try{
 	 var packet=new enet.Packet("Hi!", enet.Packet.FLAG_RELIABLE);
 	 peer.send(0,packet);
-	}catch(e){}
+	}catch(e){
+	    console.log(e);
+	}
 },1000);
-*/
+

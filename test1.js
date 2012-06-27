@@ -44,7 +44,9 @@ setInterval(function(){
 	try{
 	 var packet=new enet.Packet("Hello!", enet.Packet.FLAG_RELIABLE);
 	 peer.send(0,packet);
-	}catch(e){}
+	}catch(e){
+	    console.log(e);
+	}
 },3000);
 
 
