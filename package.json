@@ -4,10 +4,10 @@
     "url" : "http://memeo-inc.com/",
     "keywords" : ["networking","peer-to-peer","enet"],
     "author" : "Memeo, Inc",
-    "contributors" : ["Casey Marshall <casey.marshall@memeo-inc.com>"],
+    "contributors" : ["Casey Marshall <casey.marshall@memeo-inc.com>", "Mokhtar Naamani <mokhtar.naamani@gmail.com>"],
     "dependencies" : {},
     "version" : "0.0.1",
     "main" : "./lib/enet",
     "directories" : {},
-    "engines" : { "node" : ">=0.4.7" }
+    "engines" : { "node" : ">=0.6.0" }
 }

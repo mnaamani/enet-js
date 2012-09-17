@@ -429,7 +429,7 @@ public:
         {
             address->address.host = args[0]->Uint32Value();
         }
-        scope.Close(ret);
+        return scope.Close(ret);
     }
 
     static v8::Handle<v8::Value> SetPort(const v8::Arguments& args)
@@ -441,7 +441,7 @@ public:
         {
             address->address.port = (enet_uint16) args[0]->Int32Value();
         }
-        scope.Close(ret);
+        return scope.Close(ret);
     }
     
     static v8::Handle<v8::Value> SetHostname(const v8::Arguments& args)
@@ -456,7 +456,7 @@ public:
             if (enet_address_set_host(&(address->address), *utf8) == 0)
                 success = true;
         }
-        scope.Close(v8::Boolean::New(success));
+        return scope.Close(v8::Boolean::New(success));
     }
 };
 
