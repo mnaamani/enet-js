@@ -8,6 +8,10 @@ module:
 	cp build/Release/lib.target/enetnat.node node_modules/enet/lib
 clean:
 	node-gyp clean
-	rm -fR node_modules/
+	rm -fr node_modules/
+	rm -fr enet-1.3.5/
 install:
 	cp -r node_modules/enet ~/.node_libraries/
+
+enet-patch:
+	bash install-enet.sh

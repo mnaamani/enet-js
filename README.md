@@ -2,20 +2,20 @@
 
 This is a Node wrapper for the [enet networking library](http://enet.bespin.org/). enet is a simple networking library that provides sequencing and reliability of packets sent over UDP.
 
+* This fork adds some functionality which requires minor patch to the enet library.
+
 ## Building
+Download and install the latest version of enet library, will also be patched:
 
-First, install enet. If it's installed in a non-standard location, make a note of the prefix you used, calling it `ENET_PREFIX`.
+    make enet-patch
 
-Then, build the module with `node-waf`:
-
-    node-waf configure --enet-prefix=${ENET_PREFIX}
-    node-waf build --enet-prefix=${ENET_PREFIX}
-
-Then you can create a module directory via the makefile:
+Then you can build the node module:
 
     make module
 
-You can then copy the directory `node_modules/enet` to your `node_modules` directory, e.g., `~/node_modules`. When running, make sure that `${ENET_PREFIX}/lib` is in your `LD_LIBRARY_PATH`.
+You can then install the module locally to your `node_modules` directory `~/node_modules`:
+
+    make install
 
 ## Usage
 

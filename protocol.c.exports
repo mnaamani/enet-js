@@ -1,0 +1,19 @@
+/*
+ 	rather than make the exported functions non static a new function is used
+	to explicitly use these functions.
+*/
+int
+exported_enet_protocol_dispatch_incoming_commands(ENetHost * host, ENetEvent * event){
+  return enet_protocol_dispatch_incoming_commands (host, event);
+}
+
+int
+exported_enet_protocol_handle_incoming_commands (ENetHost * host, ENetEvent * event){
+  return enet_protocol_handle_incoming_commands (host, event);
+}
+
+int
+exported_enet_protocol_send_outgoing_commands (ENetHost * host, ENetEvent * event, int checkForTimeouts){
+  return enet_protocol_send_outgoing_commands (host, event, checkForTimeouts);
+}
+

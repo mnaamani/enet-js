@@ -1,3 +1,4 @@
-build/
-node_modules/
+enet-1.3.5*
+build
+node_modules
 .lock-wscript
