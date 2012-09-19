@@ -1,6 +1,6 @@
 /* enet.cc -- node.js to enet wrapper.
    Copyright (C) 2011 Memeo, Inc. */
-   
+#include <error.h>
 #include <v8.h>
 #include <node.h>
 #include <node_buffer.h>
@@ -9,17 +9,29 @@
 #include <enet/enet.h>
 #include <cstring>
 
+#ifndef ENET_CAN_INTERCEPT_RAWPACKETS
+    # warning "currently installed ENET doesn't support rawpacket interception. Will try to use patched verison."
+    
+#ifndef ENET_EXPORTS_INTERNAL_FUNCTIONS
+    # warning "It seems a patched library was not yet built."
+    # error "do a: make enet-patch first"
+#endif
 //modified enet lib to export below functions..
 extern "C" {
     int exported_enet_protocol_dispatch_incoming_commands (ENetHost * host, ENetEvent * event);
     int exported_enet_protocol_handle_incoming_commands (ENetHost * host, ENetEvent * event);
     int exported_enet_protocol_send_outgoing_commands (ENetHost * host, ENetEvent * event, int checkForTimeouts);
 }
+#endif
 
 enum _XtraENetEventType
 {
-   ENET_EVENT_TYPE_TELEX      = 100        
+#ifndef ENET_CAN_INTERCEPT_RAWPACKETS
+   ENET_EVENT_TYPE_RAWPACKET  = 4,
+#endif
+   ENET_EVENT_TYPE_TELEX      = 100
 };
+
 
 #ifdef DEBUG
 #define debug(fmt, args...) fprintf(stderr, fmt, ##args)
@@ -638,6 +650,8 @@ public:
         MY_NODE_DEFINE_CONSTANT(s_ct, "TYPE_DISCONNECT", ENET_EVENT_TYPE_DISCONNECT);
         MY_NODE_DEFINE_CONSTANT(s_ct, "TYPE_RECEIVE", ENET_EVENT_TYPE_RECEIVE);
         MY_NODE_DEFINE_CONSTANT(s_ct, "TYPE_TELEX", ENET_EVENT_TYPE_TELEX);
+        MY_NODE_DEFINE_CONSTANT(s_ct, "TYPE_RAWPACKET", 4);//ENET_EVENT_TYPE_RAWPACKET (if my changes are accepted in ENET)
+        
         target->Set(v8::String::NewSymbol("Event"), s_ct->GetFunction());
     }
     
@@ -819,12 +833,13 @@ public:
     static v8::Handle<v8::Value> GetAddress(const v8::Arguments& args)
     {
         v8::HandleScope scope;
-        Host *host = node::ObjectWrap::Unwrap<Host>(args.This());
+        Host *host = node::ObjectWrap::Unwrap<Host>(args.This());        
         if(host->address->address.port == 0){
-            //puts("Getting Port");
             struct sockaddr_in sin;
-            memset(&sin, 0, sizeof(sin));                      
+            memset(&sin, 0, sizeof(sin));
             socklen_t size;
+            //WTF is wrong with getsockname() takes too many tries to finally return valid
+            //information about the socket.
             if(getsockname (host->host->socket, (struct sockaddr *) &sin, &size) == 0) {
                 host->address->address.port = ntohs(sin.sin_port);
             }
@@ -913,24 +928,37 @@ public:
         if (args.Length() > 0)
             timeout = args[0]->Uint32Value();
         ENetEvent event;
-        int ret = Host::override_enet_host_service(host->host, &event, timeout);
+        int ret;
+#ifndef ENET_CAN_INTERCEPT_RAWPACKETS
+	    ret = Host::override_enet_host_service(host->host, &event, timeout);
+#else
+    	ret = enet_host_service(host->host, &event, timeout);
+#endif
         if (ret < 0)
             return v8::ThrowException(v8::String::New("error servicing host"));
         if (ret < 1)
             return v8::Null();
-       
-        if(event.type == (ENetEventType) ENET_EVENT_TYPE_TELEX){
+      
+        if(event.type == (ENetEventType) ENET_EVENT_TYPE_RAWPACKET ){            
+            if(host->host->receivedDataLength >= 2 && host->host->receivedData[0]=='{' && 
+               (host->host->receivedData[host->host->receivedDataLength-1]=='}' || host->host->receivedData[host->host->receivedDataLength-1]=='\n') ){
+                  event.type = (ENetEventType) ENET_EVENT_TYPE_TELEX;
+            }
+        }
+        
+        if(event.type == (ENetEventType) ENET_EVENT_TYPE_RAWPACKET || event.type == (ENetEventType) ENET_EVENT_TYPE_TELEX)
+        {
             v8::Local<v8::Object> eobj = v8::Object::New();
             ENetAddress address;
             address.host = host->host->receivedAddress.host;
             address.port = host->host->receivedAddress.port;            
-            eobj->Set(v8::String::NewSymbol("type"),v8::Integer::New(ENET_EVENT_TYPE_TELEX));
+            eobj->Set(v8::String::NewSymbol("type"),v8::Integer::New(event.type));
             eobj->Set(v8::String::NewSymbol("address"), Address::WrapAddress(address));
             eobj->Set(v8::String::NewSymbol("packet"), Packet::WrapPacket(event.packet));
-            return scope.Close(eobj);                            
-        }else{
-            return scope.Close(Event::WrapEvent(event));
-        }        
+            return scope.Close(eobj);
+        } 
+        
+        return scope.Close(Event::WrapEvent(event));      
     }
     
     static v8::Handle<v8::Value> FD(const v8::Arguments& args)
@@ -960,25 +988,7 @@ public:
         delete addr;        
         return scope.Close(v8::Int32::New(ret));
     }
-    static int handle_telehash_telex(ENetHost *host, ENetEvent *event){
-        //puts("handle_telehash_telex");
-        //puts((const char*)host->receivedData);
-        //quick and dirty test for JSON packet..start with "{" end with  "}" or "\n"        
-        if(host->receivedDataLength >= 2 && host->receivedData[0]=='{' && 
-           (host->receivedData[host->receivedDataLength-1]=='}' || host->receivedData[host->receivedDataLength-1]=='\n') ){
-           
-            if (event != NULL)
-            {                
-                event->type = (ENetEventType) ENET_EVENT_TYPE_TELEX;
-                event->data = 0;
-                event->packet = enet_packet_create(host->receivedData, host->receivedDataLength, ENET_PACKET_FLAG_NO_ALLOCATE);
-                //puts("handle_telehash_telex");
-                return 1;
-            }
-        }
-        return -1;
-    }
-    
+#ifndef ENET_CAN_INTERCEPT_RAWPACKETS  
     static int override_enet_protocol_receive_incoming_commands (ENetHost * host, ENetEvent * event)
     {
         for (;;)
@@ -1005,9 +1015,6 @@ public:
            host -> totalReceivedData += receivedLength;
            host -> totalReceivedPackets ++;
            
-           //intercept JSON telexes (out of band of ENET protocol)
-           if( handle_telehash_telex(host,event) == 1 ) return 1;
-           
            switch (exported_enet_protocol_handle_incoming_commands (host, event))
            {
            case 1:
@@ -1017,6 +1024,13 @@ public:
               return -1;
 
            default:
+              //not an enet packet
+              if (event != NULL){                
+                    event->type = (ENetEventType) ENET_EVENT_TYPE_RAWPACKET;
+                    event->data = 0;
+                    event->packet = enet_packet_create(host->receivedData, host->receivedDataLength, ENET_PACKET_FLAG_NO_ALLOCATE);
+                    return 1;
+              }
               break;
            }
         }
@@ -1131,6 +1145,7 @@ public:
 
         return 0; 
     }
+#endif
 
 };
 

@@ -17,7 +17,8 @@ function Host()
 {
     events.EventEmitter.call(this);
     var self = this;
-
+    self.socket_binded = false;
+    
     if (arguments.length == 2)
     {
         self.host = new enetnat.Host(arguments[0], arguments[1]);
@@ -44,6 +45,18 @@ function Host()
     self.runloop = function() {
         try
         {
+            //when we are binding socket to port 0 / ANY it takes a while before we can
+            //figure out what port the socket actually binded to..at which time we fire a 'ready' event.
+            //hence the below ugly code!
+            //problem is with underlying getsockname() system call.
+            if(!self.socket_binded){
+                //keep checking until the port is non 0
+                if(self.host.address().port()!=0){
+                    self.socket_binded=true;
+                    self.emit('ready');
+                }
+            }
+            
             var event = self.host.service(0);
             var ev_type;
             while (event != null)
@@ -70,13 +83,20 @@ function Host()
                 case enetnat.Event.TYPE_RECEIVE:
                     self.emit('message', event.peer(), event.packet(), event.channelID(), event.data());
                     break;
+                
                 case enetnat.Event.TYPE_TELEX:
                     self.emit('telex', event.packet.data(),{
                                             address: event.address.address(),
                                             port: event.address.port()
                                         });
                     
-                    break;
+                    break;                
+		        case enetnat.Event.TYPE_RAWPACKET:
+		            self.emit('packet', event.packet.data(),{
+                                            address: event.address.address(),
+                                            port: event.address.port()
+                                        });
+			        break;
                 }
 
                 event = self.host.service(0);
@@ -84,7 +104,8 @@ function Host()
         }
         catch (e)
         {
-            self.emit('error', e);
+         	console.log(e);
+		self.emit('error', e);
         }
     };
     self.watcher.callback = self.runloop;
