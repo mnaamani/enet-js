@@ -11,7 +11,11 @@ clean:
 	rm -fr node_modules/
 	rm -fr enet-1.3.5/
 install:
+	mkdir -p ~/.node_libraries/enet
 	cp -r node_modules/enet ~/.node_libraries/
+
+uninstall:
+	rm -fr ~/.node_libraries/enet
 
 enet-patch:
 	bash install-enet.sh
